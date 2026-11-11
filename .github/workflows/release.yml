@@ -26,11 +26,13 @@ jobs:
       - name: Read and validate module version
         id: version
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           VERSION="$(node -p "require('./module.json').version")"
           TAG="${GITHUB_REF_NAME}"
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
+            TAG="${INPUT_TAG}"
           fi
           if [ "v${VERSION}" != "${TAG}" ]; then
             echo "::error::Tag ${TAG} does not match module.json version ${VERSION}"
