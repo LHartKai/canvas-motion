@@ -46,20 +46,26 @@ The release workflow publishes:
 
 ## Publishing a release
 
-1. Update the `version` field in `module.json`.
-2. Commit and push the changes to `main`.
-3. Create and push a matching version tag. Example for version `0.1.0`:
+Before publishing, update the `version` field in `module.json` and commit the complete release-ready code to `main`.
+
+Two publishing methods are available:
+
+**Automatic on tag push**
+1. Create a tag matching the manifest version. For version `0.1.0`:
 
    ```bash
    git tag v0.1.0
    git push origin v0.1.0
    ```
 
-4. GitHub Actions checks that the tag matches `module.json`, builds the correctly structured ZIP, and publishes a GitHub Release with both assets.
+2. GitHub Actions validates the version, builds the ZIP, and publishes the GitHub Release.
 
-The workflow can also be started manually from **Actions → Build and publish release**, using an existing tag.
+**Manual from GitHub**
+1. Open **Actions → Build and publish release → Run workflow**.
+2. Select the `main` branch (or another branch containing the release-ready version).
+3. Run the workflow. It reads the version from `module.json` and creates the matching `vVERSION` release tag.
 
-Do not create a release until the module has functional code and has been tested in the target Foundry version.
+Do not publish a release until the module has functional code and has been tested in the target Foundry version.
 
 ## Compatibility
 
