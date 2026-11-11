@@ -10,6 +10,8 @@ on:
       - "scripts/**"
       - "styles/**"
       - "packs/**"
+      - "src/packs/**"
+      - "package.json"
       - ".github/workflows/build-dev.yml"
   workflow_dispatch:
 
@@ -22,6 +24,14 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
+      - name: Install Foundry CLI
+        run: npm install --no-save @foundryvtt/foundryvtt-cli
+
+      - name: Compile module compendiums
+        run: |
+          npx fvtt package workon canvas-motion --type Module
+          npx fvtt package pack canvas-motion-macros --inputDirectory src/packs/canvas-motion-macros --outputDirectory packs
 
       - name: Build development ZIP
         shell: bash
