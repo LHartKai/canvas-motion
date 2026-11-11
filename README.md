@@ -135,3 +135,8 @@ The seam preparation now supplements the minimum-error path with bounded patch s
 
 
 Patch synthesis is experimental and runs only during initial texture preparation. The source is sampled from the same map, so the module does not download or generate assets externally. The search is capped and deterministic to bound CPU time. Large maps can still require substantial temporary memory because Canvas image processing uses full-resolution pixel buffers; the existing image-size guard remains in place. Verify performance and visual quality on a lower-spec client before using this in a live session.
+
+
+### Organic patch blending
+
+Patch synthesis now uses a smoothly varying, low-frequency boundary mask rather than a straight rectangular feather. The patch boundary gently wanders along the seam, and its edge fades into the original pixels with a smoothstep profile. Segment ends also fade to reduce visible rectangular joins. This is a lightweight deterministic mask (no noise library or per-frame work), but it is experimental: the source patch may still contain recognizable repeated details, and the mask cannot guarantee semantic alignment of trees, roads, or other objects.
