@@ -38,7 +38,7 @@ The GM controls movement and the module broadcasts the commands to connected cli
 
 ### Current prototype limitations
 
-- No seamless repeating/tiling yet. The image moves as one sprite, so empty canvas can become visible at the edges.
+- Continuous repetition uses multiple pre-created sprites positioned around the original Background. The number of copies is calculated from the visible Canvas extent and the image size.
 - No settings window or scene-control buttons yet; the test API is exposed through `game.canvasMotion`.
 - Movement is visual only and is not saved to Scene data.
 - Test with a disposable scene first. Rendering and synchronization need validation in the target V14 build.
@@ -54,6 +54,12 @@ The module includes the **Canvas Motion — Macros** compendium with ready-to-us
 - Check the current movement status.
 
 The macros call the public `game.canvasMotion` API. They require the module to be enabled and are intended to be run by the GM. The pack is provided as module content; changes made directly to the packaged compendium may be overwritten by module updates.
+
+## Continuous Background Loop
+
+The prototype now creates a row or column of visual copies around the original Background. Copies are created once when movement starts and reused on each ticker update; movement uses the Foundry ticker delta time and is measured in canvas pixels per second. The original Background position is restored when movement stops.
+
+The loop still requires the image edges to match on the chosen axis for a visually seamless join. The multi-sprite implementation needs validation in Foundry V14 at different zoom levels and with both horizontal and vertical movement.
 
 ## 0.2 — Canvas Motion
 
