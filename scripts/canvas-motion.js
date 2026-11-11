@@ -245,20 +245,40 @@ class BackgroundMotion {
 
       if (!bestCandidate) continue;
 
-      const feather = Math.min(8, Math.max(2, Math.floor(patchHalf * 0.2)));
+      const feather = Math.min(12, Math.max(4, Math.floor(patchHalf * 0.25)));
+      const alongFeather = Math.min(16, Math.max(6, Math.floor(actualLength * 0.18)));
+
+      // Smooth deterministic variation creates an irregular, organic mask
+      // instead of the visible rectangular patch boundary. The variation is
+      // deliberately low-frequency so it resembles natural texture edges.
+      const organicOffset = (position, seed) => {
+        const wave = Math.sin(position * 0.071 + seed) * 0.55
+          + Math.sin(position * 0.19 + seed * 1.7) * 0.30
+          + Math.sin(position * 0.037 + seed * 2.3) * 0.15;
+        return Math.round(wave * feather * 2.5);
+      };
+
       for (let alongOffset = 0; alongOffset < actualLength; alongOffset++) {
         const targetAlong = segmentStart + alongOffset;
         const sourceAlong = bestCandidate.along + alongOffset;
+        const wave = organicOffset(targetAlong, segmentStart * 0.013 + bestCandidate.across * 0.007);
+        const leftEdge = center - patchHalf + wave;
+        const rightEdge = center + patchHalf + wave;
+
         for (let acrossOffset = 0; acrossOffset < patchWidth; acrossOffset++) {
           const targetAcross = center - patchHalf + acrossOffset;
           const sourceAcross = bestCandidate.across + acrossOffset;
           if (targetAcross < 0 || targetAcross >= dimension || sourceAcross < 0 || sourceAcross >= dimension) continue;
 
-          let blend = 1;
-          if (acrossOffset < feather) blend = (acrossOffset + 1) / (feather + 1);
-          else if (acrossOffset >= patchWidth - feather) blend = (patchWidth - acrossOffset) / (feather + 1);
-          const alongFeather = Math.min(12, Math.floor(actualLength / 4));
-          if (alongFeather > 0) blend *= Math.min(1, (alongOffset + 1) / alongFeather, (actualLength - alongOffset) / alongFeather);
+          const distanceFromLeft = targetAcross - leftEdge;
+          const distanceFromRight = rightEdge - targetAcross;
+          let acrossBlend = Math.min(1, distanceFromLeft / feather, distanceFromRight / feather);
+          acrossBlend = Math.max(0, Math.min(1, acrossBlend));
+          acrossBlend = acrossBlend * acrossBlend * (3 - 2 * acrossBlend);
+
+          const endFade = Math.min(1, (alongOffset + 1) / alongFeather, (actualLength - alongOffset) / alongFeather);
+          const blend = acrossBlend * Math.max(0, endFade);
+          if (blend <= 0) continue;
 
           const target = getOffset(targetAlong, targetAcross);
           const sourceOffset = getOffset(sourceAlong, sourceAcross);
