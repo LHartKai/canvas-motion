@@ -180,6 +180,93 @@ class BackgroundMotion {
       }
     }
 
+    /*
+     * Local patch synthesis around the seam.
+     * For each short segment along the seam, search a bounded set of source
+     * patches elsewhere in the same map. Pick the patch whose outer context
+     * best matches both sides of the target band, then blend only its borders.
+     * This can introduce plausible new scenery instead of forcing unrelated
+     * edge pixels together. Candidate count and sampling are deliberately capped.
+     */
+    const patchHalf = Math.max(12, Math.min(48, Math.floor(dimension * 0.012)));
+    const patchWidth = patchHalf * 2;
+    const segmentLength = Math.max(48, Math.min(128, Math.floor(seamLength * 0.08)));
+    const contextWidth = Math.max(4, Math.min(10, Math.floor(patchHalf * 0.22)));
+    const sampleAlong = Math.max(4, Math.floor(segmentLength / 12));
+    const sampleAcross = Math.max(2, Math.floor(contextWidth / 3));
+    const candidateStep = Math.max(24, Math.floor(Math.min(width, height) / 32));
+    const maxCandidates = 180;
+    const candidatePositions = [];
+
+    for (let across = candidateStep; across <= dimension - patchWidth - candidateStep; across += candidateStep) {
+      for (let along = candidateStep; along <= seamLength - segmentLength - candidateStep; along += candidateStep) {
+        candidatePositions.push({ across, along });
+      }
+    }
+
+    // Bound work on very large maps while retaining a deterministic spread.
+    const stride = Math.max(1, Math.ceil(candidatePositions.length / maxCandidates));
+    const candidates = candidatePositions.filter((_, index) => index % stride === 0).slice(0, maxCandidates);
+    const getPixel = (along, across, channel) => original[getOffset(along, across) + channel];
+
+    for (let segmentStart = 0; segmentStart < seamLength; segmentStart += segmentLength) {
+      const actualLength = Math.min(segmentLength, seamLength - segmentStart);
+      if (actualLength < 16 || !candidates.length) continue;
+
+      let bestCandidate = null;
+      let bestScore = Infinity;
+      for (const candidate of candidates) {
+        if (candidate.along + actualLength >= seamLength || candidate.across + patchWidth >= dimension) continue;
+        let score = 0;
+        let samples = 0;
+
+        for (let alongOffset = 0; alongOffset < actualLength; alongOffset += sampleAlong) {
+          const targetAlong = segmentStart + alongOffset;
+          const sourceAlong = candidate.along + alongOffset;
+
+          for (let edgeOffset = 0; edgeOffset < contextWidth; edgeOffset += sampleAcross) {
+            for (const side of [0, 1]) {
+              const targetAcross = side === 0 ? center - patchHalf - contextWidth + edgeOffset : center + patchHalf + edgeOffset;
+              const sourceAcross = side === 0 ? candidate.across + edgeOffset : candidate.across + patchWidth - contextWidth + edgeOffset;
+              if (targetAcross < 0 || targetAcross >= dimension || sourceAcross < 0 || sourceAcross >= dimension) continue;
+              for (let channel = 0; channel < 3; channel++) {
+                score += Math.abs(getPixel(targetAlong, targetAcross, channel) - getPixel(sourceAlong, sourceAcross, channel));
+                samples++;
+              }
+            }
+          }
+        }
+
+        score /= Math.max(1, samples);
+        if (score < bestScore) { bestScore = score; bestCandidate = candidate; }
+      }
+
+      if (!bestCandidate) continue;
+
+      const feather = Math.min(8, Math.max(2, Math.floor(patchHalf * 0.2)));
+      for (let alongOffset = 0; alongOffset < actualLength; alongOffset++) {
+        const targetAlong = segmentStart + alongOffset;
+        const sourceAlong = bestCandidate.along + alongOffset;
+        for (let acrossOffset = 0; acrossOffset < patchWidth; acrossOffset++) {
+          const targetAcross = center - patchHalf + acrossOffset;
+          const sourceAcross = bestCandidate.across + acrossOffset;
+          if (targetAcross < 0 || targetAcross >= dimension || sourceAcross < 0 || sourceAcross >= dimension) continue;
+
+          let blend = 1;
+          if (acrossOffset < feather) blend = (acrossOffset + 1) / (feather + 1);
+          else if (acrossOffset >= patchWidth - feather) blend = (patchWidth - acrossOffset) / (feather + 1);
+
+          const target = getOffset(targetAlong, targetAcross);
+          const sourceOffset = getOffset(sourceAlong, sourceAcross);
+          for (let channel = 0; channel < 3; channel++) {
+            pixels[target + channel] = Math.round(
+              original[target + channel] * (1 - blend) + original[sourceOffset + channel] * blend
+            );
+          }
+        }
+      }
+    }
+
     shiftedContext.putImageData(image, 0, 0);
 
     // Undo the offset after repairing the center seam. This moves the
