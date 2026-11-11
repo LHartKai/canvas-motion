@@ -9,6 +9,7 @@ on:
       - "README.md"
       - "scripts/**"
       - "styles/**"
+      - "packs/**"
       - ".github/workflows/build-dev.yml"
   workflow_dispatch:
 
