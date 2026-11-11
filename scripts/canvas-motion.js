@@ -64,16 +64,22 @@ class BackgroundMotion {
     const frameY = Math.round(frame.y * resolution);
     context.drawImage(source, frameX, frameY, width, height, 0, 0, width, height);
 
-    // Cross-fade opposite edge strips by averaging mirrored samples.
-    // The resulting pixels at the wrap boundary are identical.
+    // Feather opposite edge samples. The blend is strongest at the wrap
+    // boundary and fades smoothly to zero inside the image, avoiding the
+    // broad mirrored look of a constant 50/50 blend.
     const image = context.getImageData(0, 0, width, height);
     const pixels = image.data;
-    const edgeSize = Math.max(1, Math.min(256, Math.floor((horizontal ? width : height) * 0.08)));
-    const blendPair = (a, b) => {
+    const sourcePixels = new Uint8ClampedArray(pixels);
+    const edgeSize = Math.max(2, Math.min(192, Math.floor((horizontal ? width : height) * 0.06)));
+    const blendPair = (a, b, distance) => {
+      const t = Math.min(1, distance / edgeSize);
+      const smooth = t * t * (3 - 2 * t);
+      const amount = 0.5 * (1 - smooth);
       for (let channel = 0; channel < 4; channel++) {
-        const value = Math.round((pixels[a + channel] + pixels[b + channel]) / 2);
-        pixels[a + channel] = value;
-        pixels[b + channel] = value;
+        const first = sourcePixels[a + channel];
+        const second = sourcePixels[b + channel];
+        pixels[a + channel] = Math.round(first * (1 - amount) + second * amount);
+        pixels[b + channel] = Math.round(second * (1 - amount) + first * amount);
       }
     };
 
@@ -82,7 +88,7 @@ class BackgroundMotion {
         for (let x = 0; x < edgeSize; x++) {
           const left = (y * width + x) * 4;
           const right = (y * width + (width - 1 - x)) * 4;
-          blendPair(left, right);
+          blendPair(left, right, x);
         }
       }
     } else {
@@ -90,7 +96,7 @@ class BackgroundMotion {
         for (let x = 0; x < width; x++) {
           const top = (y * width + x) * 4;
           const bottom = ((height - 1 - y) * width + x) * 4;
-          blendPair(top, bottom);
+          blendPair(top, bottom, y);
         }
       }
     }
