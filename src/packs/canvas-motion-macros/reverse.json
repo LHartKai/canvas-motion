@@ -1,0 +1,15 @@
+{
+  "_id": "reverse",
+  "name": "Canvas Motion — Inverter direção",
+  "type": "script",
+  "author": "LHartKai",
+  "img": "icons/svg/clockwork.svg",
+  "scope": "global",
+  "command": "if (!game.canvasMotion) return ui.notifications.error(\"Canvas Motion não está ativo.\");\nif (!game.canvasMotion.reverse()) ui.notifications.info(\"Não há movimento ativo para inverter.\");",
+  "folder": null,
+  "sort": 700,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {}
+}
