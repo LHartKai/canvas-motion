@@ -131,14 +131,38 @@ class BackgroundMotion {
     };
 
     if (horizontal) {
+      // Horizontal maps often contain distinctive trees, paths, and other
+      // recognizable details at the side edges. Pixel-to-pixel blending can
+      // mirror those details, so balance only the average edge color per row.
+      // This reduces a hard vertical color seam without copying structures.
+      const correctionWidth = Math.max(2, Math.min(128, Math.floor(width * 0.04)));
       for (let y = 0; y < height; y++) {
-        for (let x = 0; x < edgeSize; x++) {
+        const difference = [0, 0, 0, 0];
+        for (let x = 0; x < correctionWidth; x++) {
           const left = (y * width + x) * 4;
           const right = (y * width + (width - 1 - x)) * 4;
-          blendPair(left, right, x);
+          for (let channel = 0; channel < 4; channel++) {
+            difference[channel] += sourcePixels[right + channel] - sourcePixels[left + channel];
+          }
+        }
+        for (let channel = 0; channel < 4; channel++) difference[channel] /= correctionWidth;
+
+        for (let x = 0; x < edgeSize; x++) {
+          const t = x / edgeSize;
+          const smooth = t * t * (3 - 2 * t);
+          const amount = 0.5 * (1 - smooth);
+          const left = (y * width + x) * 4;
+          const right = (y * width + (width - 1 - x)) * 4;
+          for (let channel = 0; channel < 4; channel++) {
+            const adjustment = difference[channel] * amount;
+            pixels[left + channel] = Math.max(0, Math.min(255, Math.round(sourcePixels[left + channel] + adjustment)));
+            pixels[right + channel] = Math.max(0, Math.min(255, Math.round(sourcePixels[right + channel] - adjustment)));
+          }
         }
       }
     } else {
+      // Keep the current vertical pixel blend: it has produced better results
+      // on the maps tested so far.
       for (let y = 0; y < edgeSize; y++) {
         for (let x = 0; x < width; x++) {
           const top = (y * width + x) * 4;
