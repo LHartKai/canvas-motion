@@ -30,6 +30,7 @@ jobs:
           cp README.md dist/canvas-motion/
           cp -R scripts dist/canvas-motion/
           cp -R styles dist/canvas-motion/
+          cp -R packs dist/canvas-motion/
           cd dist
           zip -r canvas-motion-dev.zip canvas-motion
 
