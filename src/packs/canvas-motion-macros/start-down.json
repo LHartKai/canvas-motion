@@ -1,0 +1,15 @@
+{
+  "_id": "start-down",
+  "name": "Canvas Motion — Iniciar para baixo",
+  "type": "script",
+  "author": "LHartKai",
+  "img": "icons/svg/clockwork.svg",
+  "scope": "global",
+  "command": "if (!game.canvasMotion) return ui.notifications.error(\"Canvas Motion não está ativo.\");\ngame.canvasMotion.start({ direction: \"down\", speed: 80 });",
+  "folder": null,
+  "sort": 400,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {}
+}
