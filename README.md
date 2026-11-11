@@ -34,13 +34,36 @@ Official API references:
 - [PrimarySpriteMesh — Foundry V14 API](https://foundryvtt.com/api/classes/foundry.canvas.primary.PrimarySpriteMesh.html)
 - [Canvas — Foundry V14 API](https://foundryvtt.com/api/v14/classes/foundry.canvas.Canvas.html)
 
+## Installation
+
+After the first release, install through Foundry using this manifest URL:
+
+`https://github.com/LHartKai/canvas-motion/releases/latest/download/module.json`
+
+The release workflow publishes:
+- `module.json` — the package manifest used by Foundry.
+- `canvas-motion.zip` — the installable package, with the module files inside a top-level `canvas-motion/` directory.
+
+## Publishing a release
+
+1. Update the `version` field in `module.json`.
+2. Commit and push the changes to `main`.
+3. Create and push a matching version tag. Example for version `0.1.0`:
+
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+
+4. GitHub Actions checks that the tag matches `module.json`, builds the correctly structured ZIP, and publishes a GitHub Release with both assets.
+
+The workflow can also be started manually from **Actions → Build and publish release**, using an existing tag.
+
+Do not create a release until the module has functional code and has been tested in the target Foundry version.
+
 ## Compatibility
 
 Target: Foundry VTT V14. Compatibility is not yet verified.
-
-## Installation
-
-No release is available yet. A manifest URL and release package will be added after the first functional build has been tested.
 
 ## License
 
