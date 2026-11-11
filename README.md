@@ -109,3 +109,8 @@ The module's macro JSON files are source assets, not a prebuilt LevelDB pack. Wh
 ### Edge correction by movement axis
 
 Horizontal scrolling uses a color-balancing pass on the left and right edge strips. It gradually corrects average color differences per row instead of mixing recognizable pixels from opposite sides, which can create mirrored trees or other duplicated details. Vertical scrolling retains the feathered pixel blend because it has looked better in the maps tested so far. Both approaches are approximate and should be visually checked with each map.
+
+
+## Unified lightweight seam preparation
+
+Both horizontal and vertical movement now use the same one-shot offset-and-feather preparation. The image is shifted by half its size along the movement axis, moving the original wrap boundary to the center. A narrow, smooth crossfade is applied only around that relocated seam. This avoids per-frame image processing and requires no external libraries. The source image and Scene data remain unchanged. This is an experimental lightweight approach and still requires visual validation on varied maps; highly distinctive objects crossing the seam may remain noticeable.
