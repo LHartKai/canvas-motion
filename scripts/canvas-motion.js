@@ -14,6 +14,8 @@ class BackgroundMotion {
     this.active = false;
     this.paused = false;
     this.mesh = null;
+    this.originalTexture = null;
+    this.processedTexture = null;
     this.loopMeshes = [];
     this.primary = null;
     this.ticker = null;
@@ -30,6 +32,74 @@ class BackgroundMotion {
 
   get isGM() { return game.user?.isGM === true; }
   get currentBackground() { return canvas?.ready ? canvas.primary?.background : null; }
+
+  /**
+   * Builds a locally processed texture whose opposite edges match on the
+   * requested movement axis. The original Scene Background texture is kept.
+   */
+  prepareSeamlessTexture(mesh, horizontal) {
+    const texture = mesh.texture;
+    const resolution = texture?.baseTexture?.resolution ?? texture?.source?.resolution ?? 1;
+    const frame = texture?.frame;
+    const source = texture?.baseTexture?.getDrawableSource?.()
+      ?? texture?.source?.resource?.source
+      ?? texture?.source?.resource
+      ?? texture?.baseTexture?.resource?.source
+      ?? texture?.baseTexture?.resource;
+
+    if (!source || !frame) throw new Error("Não foi possível acessar os pixels da imagem do Background.");
+    const width = Math.round(frame.width * resolution);
+    const height = Math.round(frame.height * resolution);
+    if (width < 2 || height < 2 || width > 8192 || height > 8192 || width * height > 40000000) {
+      throw new Error("A imagem excede o limite de processamento automático (8192 px por lado / 40 MP).");
+    }
+
+    const workCanvas = document.createElement("canvas");
+    workCanvas.width = width;
+    workCanvas.height = height;
+    const context = workCanvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Não foi possível iniciar o processamento 2D da imagem.");
+
+    const frameX = Math.round(frame.x * resolution);
+    const frameY = Math.round(frame.y * resolution);
+    context.drawImage(source, frameX, frameY, width, height, 0, 0, width, height);
+
+    // Cross-fade opposite edge strips by averaging mirrored samples.
+    // The resulting pixels at the wrap boundary are identical.
+    const image = context.getImageData(0, 0, width, height);
+    const pixels = image.data;
+    const edgeSize = Math.max(1, Math.min(256, Math.floor((horizontal ? width : height) * 0.08)));
+    const blendPair = (a, b) => {
+      for (let channel = 0; channel < 4; channel++) {
+        const value = Math.round((pixels[a + channel] + pixels[b + channel]) / 2);
+        pixels[a + channel] = value;
+        pixels[b + channel] = value;
+      }
+    };
+
+    if (horizontal) {
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < edgeSize; x++) {
+          const left = (y * width + x) * 4;
+          const right = (y * width + (width - 1 - x)) * 4;
+          blendPair(left, right);
+        }
+      }
+    } else {
+      for (let y = 0; y < edgeSize; y++) {
+        for (let x = 0; x < width; x++) {
+          const top = (y * width + x) * 4;
+          const bottom = ((height - 1 - y) * width + x) * 4;
+          blendPair(top, bottom);
+        }
+      }
+    }
+    context.putImageData(image, 0, 0);
+
+    const TextureClass = globalThis.PIXI?.Texture;
+    if (!TextureClass?.from) throw new Error("PIXI.Texture.from não está disponível.");
+    return TextureClass.from(workCanvas);
+  }
 
   createDuplicate(mesh) {
     const SpriteClass = globalThis.PIXI?.Sprite;
@@ -90,6 +160,15 @@ class BackgroundMotion {
     this.stop({ broadcast: false, restore: true });
     try {
       this.mesh = mesh;
+      this.originalTexture = mesh.texture;
+      const horizontal = direction === "left" || direction === "right";
+      this.processedTexture = this.prepareSeamlessTexture(mesh, horizontal);
+      const originalWidth = mesh.width;
+      const originalHeight = mesh.height;
+      mesh.texture = this.processedTexture;
+      // Preserve the Background's existing on-canvas dimensions and transform.
+      mesh.width = originalWidth;
+      mesh.height = originalHeight;
       this.primary = canvas.primary;
       this.origin = { x: mesh.position.x, y: mesh.position.y };
       this.options = { direction, speed };
@@ -111,6 +190,7 @@ class BackgroundMotion {
     } catch (error) {
       console.error(`[${MODULE_ID}] Could not start loop:`, error);
       this.cleanupLoopMeshes();
+      this.restoreOriginalTexture();
       this.resetState();
       ui.notifications.error(`Canvas Motion: não foi possível iniciar. ${error.message}`);
       return false;
@@ -179,6 +259,16 @@ class BackgroundMotion {
     return true;
   }
 
+  restoreOriginalTexture() {
+    if (this.mesh && this.originalTexture) {
+      this.mesh.texture = this.originalTexture;
+      this.primary && (this.primary.renderDirty = true);
+    }
+    if (this.processedTexture) this.processedTexture.destroy(true);
+    this.originalTexture = null;
+    this.processedTexture = null;
+  }
+
   cleanupLoopMeshes() {
     for (const sprite of this.loopMeshes) {
       sprite.parent?.removeChild(sprite);
@@ -196,13 +286,14 @@ class BackgroundMotion {
       if (this.primary) this.primary.renderDirty = true;
     }
     this.cleanupLoopMeshes();
+    this.restoreOriginalTexture();
     this.resetState();
     if (broadcast && wasActive && this.isGM) game.socket.emit(SOCKET_NAME, { action: "stop" });
     return wasActive;
   }
 
   resetState() {
-    this.active = false; this.paused = false; this.mesh = null; this.loopMeshes = [];
+    this.active = false; this.paused = false; this.mesh = null; this.originalTexture = null; this.processedTexture = null; this.loopMeshes = [];
     this.primary = null; this.ticker = null; this.tickHandler = null; this.origin = null;
     this.options = null; this.elapsedBeforePause = 0; this.lastSceneId = null;
     this.loopSize = 0; this.copyOffsets = []; this.phaseOffset = 0;
@@ -211,7 +302,8 @@ class BackgroundMotion {
   status() {
     return { active: this.active, paused: this.paused, direction: this.options?.direction ?? null,
       speed: this.options?.speed ?? null, sceneId: this.lastSceneId,
-      copies: this.loopMeshes.length, loop: this.active ? "multi-sprite" : null };
+      copies: this.loopMeshes.length, loop: this.active ? "multi-sprite" : null,
+      seamlessPreparation: this.active ? "edge-blend" : null };
   }
 
   handleSocket(message) {
