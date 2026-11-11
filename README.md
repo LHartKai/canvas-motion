@@ -122,3 +122,8 @@ Both horizontal and vertical movement now use the same one-shot offset-and-feath
 ### Adaptive localized seam feathering
 
 The experimental seam preparation now uses the same adaptive method for horizontal and vertical scrolling. It measures RGB mismatch along the relocated seam, smooths those measurements over a five-sample neighborhood, and selects a local feather width: already-compatible areas receive a narrow correction, while larger mismatches receive a wider transition. The image is offset for processing and then restored to its original orientation. Processing is performed once at movement start, with no per-frame image analysis or external libraries. This is a lightweight heuristic, not content-aware reconstruction; maps with distinctive objects crossing an edge may still show artifacts and require visual testing.
+
+
+### Minimum-error seam path (experimental)
+
+The previous broad adaptive blend has been replaced with a lightweight dynamic-programming seam search. After offsetting the image, the algorithm searches a narrow band around the relocated join and chooses a continuous path with low adjacent-pixel color/gradient difference. It then applies only a one-pixel feather along that path. The same method is used for horizontal and vertical movement. Search is bounded to at most 257 candidate positions per scanline and runs once at movement start. This reduces broad blur and mirrored artifacts, but does not synthesize replacement scenery; if a map has no naturally compatible path through the overlap, a future localized patch-synthesis stage may be needed.
