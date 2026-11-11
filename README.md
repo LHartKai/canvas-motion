@@ -114,3 +114,6 @@ Horizontal scrolling uses a color-balancing pass on the left and right edge stri
 ## Unified lightweight seam preparation
 
 Both horizontal and vertical movement now use the same one-shot offset-and-feather preparation. The image is shifted by half its size along the movement axis, moving the original wrap boundary to the center. A narrow, smooth crossfade is applied only around that relocated seam. This avoids per-frame image processing and requires no external libraries. The source image and Scene data remain unchanged. This is an experimental lightweight approach and still requires visual validation on varied maps; highly distinctive objects crossing the seam may remain noticeable.
+
+
+**Offset restoration fix:** after the center seam is blended, the image is shifted back to its original orientation. This returns the repaired seam to the outer edges of the texture, where the scrolling loop joins. The previous experimental version omitted this inverse offset and left a visible band inside the map.
