@@ -97,67 +97,86 @@ class BackgroundMotion {
     const center = half;
 
     /*
-     * Adaptive, low-cost feather:
-     * - Measure the color mismatch at the relocated seam per row/column.
-     * - Smooth that measurement along the seam so the correction does not
-     *   jump abruptly from one scanline to the next.
-     * - Use a narrow blend where edges already agree and a wider, gentler
-     *   transition only where the mismatch is larger.
-     *
-     * Work is linear in image size and happens only once when scrolling starts.
+     * Minimum-error seam cut.
+     * Instead of blending opposite edges across a broad strip, find one
+     * low-contrast path through the relocated overlap. Dynamic programming
+     * keeps the path continuous; a tiny local feather hides the final cut.
+     * The same routine handles vertical and horizontal movement.
      */
     const seamLength = horizontal ? height : width;
-    const maxBand = Math.max(3, Math.min(64, Math.floor(dimension * 0.018)));
-    const minBand = Math.max(2, Math.min(12, Math.floor(dimension * 0.004)));
-    const mismatch = new Float32Array(seamLength);
+    const maxBand = Math.max(8, Math.min(128, Math.floor(dimension * 0.035)));
+    const start = Math.max(1, center - maxBand);
+    const end = Math.min(dimension - 2, center + maxBand);
+    const candidateCount = end - start + 1;
+    if (candidateCount < 3) throw new Error("A imagem é pequena demais para localizar uma emenda segura.");
 
-    for (let i = 0; i < seamLength; i++) {
-      const first = horizontal ? (i * width + Math.max(0, center - 1)) * 4 : (Math.max(0, center - 1) * width + i) * 4;
-      const second = horizontal ? (i * width + Math.min(width - 1, center)) * 4 : (Math.min(height - 1, center) * width + i) * 4;
-      mismatch[i] = (
-        Math.abs(original[first] - original[second]) +
-        Math.abs(original[first + 1] - original[second + 1]) +
-        Math.abs(original[first + 2] - original[second + 2])
+    const getOffset = (along, across) => horizontal
+      ? (along * width + across) * 4
+      : (across * width + along) * 4;
+
+    const previous = new Float32Array(candidateCount);
+    const current = new Float32Array(candidateCount);
+    const backtrack = new Int16Array(seamLength * candidateCount);
+    const localCost = (along, across) => {
+      const left = getOffset(along, across);
+      const right = getOffset(along, across + 1);
+      const dr = original[left] - original[right];
+      const dg = original[left + 1] - original[right + 1];
+      const db = original[left + 2] - original[right + 2];
+      // RGB discontinuity dominates; a small gradient term discourages
+      // cutting directly through strong edges such as branches or road lines.
+      const color = Math.sqrt(dr * dr + dg * dg + db * db);
+      const before = getOffset(along, Math.max(0, across - 1));
+      const after = getOffset(along, Math.min(dimension - 1, across + 2));
+      const gradient = (
+        Math.abs(original[before] - original[after]) +
+        Math.abs(original[before + 1] - original[after + 1]) +
+        Math.abs(original[before + 2] - original[after + 2])
       ) / 3;
-    }
+      return color + gradient * 0.12;
+    };
 
-    // Tiny five-sample smoothing pass along the seam; no image-wide blur.
-    const smoothMismatch = new Float32Array(seamLength);
-    for (let i = 0; i < seamLength; i++) {
-      let sum = 0;
-      let count = 0;
-      for (let k = -2; k <= 2; k++) {
-        const j = i + k;
-        if (j >= 0 && j < seamLength) { sum += mismatch[j]; count++; }
-      }
-      smoothMismatch[i] = count ? sum / count : mismatch[i];
-    }
+    for (let c = 0; c < candidateCount; c++) previous[c] = localCost(0, start + c);
 
-    for (let i = 0; i < seamLength; i++) {
-      // Map RGB difference (0..255) to a local feather width.
-      const severity = Math.max(0, Math.min(1, smoothMismatch[i] / 96));
-      const localBand = Math.round(minBand + (maxBand - minBand) * severity);
-
-      for (let distance = 0; distance < localBand; distance++) {
-        const t = distance / localBand;
-        const smooth = t * t * (3 - 2 * t);
-        const amount = 0.5 * (1 - smooth);
-        const firstCoord = Math.max(0, center - 1 - distance);
-        const secondCoord = Math.min(dimension - 1, center + distance);
-
-        const first = horizontal
-          ? (i * width + firstCoord) * 4
-          : (firstCoord * width + i) * 4;
-        const second = horizontal
-          ? (i * width + secondCoord) * 4
-          : (secondCoord * width + i) * 4;
-
-        for (let channel = 0; channel < 4; channel++) {
-          const firstValue = original[first + channel];
-          const secondValue = original[second + channel];
-          pixels[first + channel] = Math.round(firstValue * (1 - amount) + secondValue * amount);
-          pixels[second + channel] = Math.round(secondValue * (1 - amount) + firstValue * amount);
+    for (let along = 1; along < seamLength; along++) {
+      for (let c = 0; c < candidateCount; c++) {
+        let best = Infinity;
+        let bestPrevious = c;
+        const minPrev = Math.max(0, c - 2);
+        const maxPrev = Math.min(candidateCount - 1, c + 2);
+        for (let p = minPrev; p <= maxPrev; p++) {
+          const transition = Math.abs(c - p) * 9;
+          const score = previous[p] + transition;
+          if (score < best) { best = score; bestPrevious = p; }
         }
+        current[c] = best + localCost(along, start + c);
+        backtrack[along * candidateCount + c] = bestPrevious;
+      }
+      previous.set(current);
+    }
+
+    let bestIndex = 0;
+    for (let c = 1; c < candidateCount; c++) {
+      if (previous[c] < previous[bestIndex]) bestIndex = c;
+    }
+
+    const seamPath = new Int16Array(seamLength);
+    seamPath[seamLength - 1] = start + bestIndex;
+    for (let along = seamLength - 1; along > 0; along--) {
+      bestIndex = backtrack[along * candidateCount + bestIndex];
+      seamPath[along - 1] = start + bestIndex;
+    }
+
+    // Minimal 1-pixel feather only at the selected path. No broad mirroring
+    // or whole-strip color averaging, so distinctive scenery stays sharper.
+    for (let along = 0; along < seamLength; along++) {
+      const seam = seamPath[along];
+      const first = getOffset(along, seam);
+      const second = getOffset(along, seam + 1);
+      for (let channel = 0; channel < 3; channel++) {
+        const average = Math.round((original[first + channel] + original[second + channel]) / 2);
+        pixels[first + channel] = average;
+        pixels[second + channel] = average;
       }
     }
 
