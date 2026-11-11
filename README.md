@@ -43,6 +43,18 @@ The GM controls movement and the module broadcasts the commands to connected cli
 - Movement is visual only and is not saved to Scene data.
 - Test with a disposable scene first. Rendering and synchronization need validation in the target V14 build.
 
+## Compendium — Macros
+
+The module includes the **Canvas Motion — Macros** compendium with ready-to-use Script macros:
+
+- Start movement left, right, up, or down (default speed: 80 canvas pixels/second).
+- Pause and resume movement.
+- Reverse direction.
+- Stop movement and restore the original Background position.
+- Check the current movement status.
+
+The macros call the public `game.canvasMotion` API. They require the module to be enabled and are intended to be run by the GM. The pack is provided as module content; changes made directly to the packaged compendium may be overwritten by module updates.
+
 ## 0.2 — Canvas Motion
 
 Future milestone for optional coordinated movement of additional Canvas layers.
