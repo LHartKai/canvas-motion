@@ -1,0 +1,15 @@
+{
+  "_id": "pause",
+  "name": "Canvas Motion — Pausar",
+  "type": "script",
+  "author": "LHartKai",
+  "img": "icons/svg/clockwork.svg",
+  "scope": "global",
+  "command": "if (!game.canvasMotion) return ui.notifications.error(\"Canvas Motion não está ativo.\");\nif (!game.canvasMotion.pause()) ui.notifications.info(\"Não há movimento ativo para pausar.\");",
+  "folder": null,
+  "sort": 500,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {}
+}
