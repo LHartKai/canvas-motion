@@ -1,35 +1,46 @@
 # Canvas Motion
 
-A Foundry VTT module for animating the scene canvas.
+A Foundry Virtual Tabletop module for animating content rendered by the Scene Canvas.
 
 ## Development status
 
-🚧 Early development — version 0.1.0
+🚧 In development — initial scaffold only. Not yet ready for installation or gameplay.
+
+## Roadmap
 
 ### 0.1.0 — Background Motion
 
-The first milestone targets the scene's static background image only.
+Animate the static Scene Background independently from Tokens, Tiles, walls, lighting, and other canvas content.
 
-Planned behavior:
-- Animate the background texture without moving Tokens, Tiles, walls, lights, or other scene objects.
-- Configure direction and speed.
-- Start, pause, resume, reverse, and stop playback.
-- Keep animation state synchronized for connected clients.
-- Restore the original background transform when stopped or when the scene changes.
+Planned controls:
+- Horizontal and vertical direction.
+- Configurable speed.
+- Start, pause, resume, reverse, and stop.
+- Synchronized playback for connected clients.
+- Restore the original visual transform on stop, scene change, and canvas teardown.
 
 ### 0.2.0 — Canvas Motion
 
-Future milestone for optional coordinated movement of additional canvas layers.
+Explore optional coordinated movement of additional Canvas content/layers.
+
+## Technical direction
+
+Foundry V14 exposes the scene background as `canvas.primary.background`, a `PrimarySpriteMesh` owned by `PrimaryCanvasGroup`. The primary group is cached and also contains other scene objects, so moving the entire group is not an acceptable implementation for 0.1.
+
+The implementation will animate the background mesh (or a dedicated background-only rendering composition) while leaving the rest of the primary group unchanged. Rendering behavior, image bounds, seamless wrapping, and interaction with lighting/vision must be validated in Foundry V14 before release.
+
+Official API references:
+- [PrimaryCanvasGroup — Foundry V14 API](https://foundryvtt.com/api/classes/foundry.canvas.groups.PrimaryCanvasGroup.html)
+- [PrimarySpriteMesh — Foundry V14 API](https://foundryvtt.com/api/classes/foundry.canvas.primary.PrimarySpriteMesh.html)
+- [Canvas — Foundry V14 API](https://foundryvtt.com/api/v14/classes/foundry.canvas.Canvas.html)
 
 ## Compatibility
 
-Target: Foundry Virtual Tabletop V14.
-
-Compatibility will be marked verified only after testing in Foundry V14.
+Target: Foundry VTT V14. Compatibility is not yet verified.
 
 ## Installation
 
-This project is not yet ready for installation. A manifest URL and release will be added after the first tested release.
+No release is available yet. A manifest URL and release package will be added after the first functional build has been tested.
 
 ## License
 
