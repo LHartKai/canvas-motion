@@ -9,6 +9,53 @@
 const MODULE_ID = "canvas-motion";
 const SOCKET_NAME = `module.${MODULE_ID}`;
 
+const MACRO_PACK_NAME = "canvas-motion-macros";
+const MACRO_SOURCE_FILES = [
+  "start-left.json", "start-right.json", "start-up.json", "start-down.json",
+  "pause.json", "resume.json", "reverse.json", "stop.json", "status.json"
+];
+
+async function ensureMacroCompendium() {
+  if (!game.user?.isGM) return;
+
+  const collection = `world.${MACRO_PACK_NAME}`;
+  let pack = game.packs.get(collection);
+
+  if (!pack) {
+    pack = await CompendiumCollection.createCompendium({
+      name: MACRO_PACK_NAME,
+      label: "Canvas Motion — Macros",
+      type: "Macro",
+      package: "world"
+    });
+  }
+
+  await pack.configure({ locked: false });
+
+  const module = game.modules.get(MODULE_ID);
+  const basePath = module?.path;
+  if (!basePath) throw new Error("Não foi possível localizar os arquivos do módulo.");
+
+  const existingNames = new Set((await pack.getIndex()).map(entry => entry.name));
+  const missing = [];
+
+  for (const filename of MACRO_SOURCE_FILES) {
+    const response = await fetch(`${basePath}/packs/canvas-motion-macros/${filename}`);
+    if (!response.ok) throw new Error(`Falha ao carregar a macro ${filename} (${response.status}).`);
+    const data = await response.json();
+    if (!existingNames.has(data.name)) missing.push(data);
+  }
+
+  if (missing.length) {
+    await Macro.createDocuments(missing, { pack: collection });
+    console.info(`[${MODULE_ID}] ${missing.length} macro(s) adicionada(s) ao compêndio do mundo.`);
+  }
+
+  await pack.configure({ locked: true });
+  if (missing.length) ui.notifications.info(`Canvas Motion: ${missing.length} macro(s) adicionada(s) ao compêndio "Canvas Motion — Macros".`);
+  else console.info(`[${MODULE_ID}] Compêndio de macros verificado; nenhuma macro nova necessária.`);
+}
+
 class BackgroundMotion {
   constructor() {
     this.active = false;
@@ -326,7 +373,7 @@ class BackgroundMotion {
 
 const canvasMotion = new BackgroundMotion();
 Hooks.once("init", () => console.info(`[${MODULE_ID}] Initializing`));
-Hooks.once("ready", () => {
+Hooks.once("ready", async () => {
   game.canvasMotion = {
     start: (options) => canvasMotion.start(options), pause: () => canvasMotion.pause(),
     resume: () => canvasMotion.resume(), reverse: () => canvasMotion.reverse(),
@@ -335,4 +382,10 @@ Hooks.once("ready", () => {
   game.socket.on(SOCKET_NAME, (message) => canvasMotion.handleSocket(message));
   Hooks.on("canvasTearDown", () => canvasMotion.stop({ broadcast: false, restore: false }));
   console.info(`[${MODULE_ID}] Ready — use game.canvasMotion.start({ direction: "left", speed: 80 }) in the console as GM.`);
+  try {
+    await ensureMacroCompendium();
+  } catch (error) {
+    console.error(`[${MODULE_ID}] Could not prepare macro compendium:`, error);
+    if (game.user?.isGM) ui.notifications.error(`Canvas Motion: não foi possível preparar o compêndio de macros. ${error.message}`);
+  }
 });
