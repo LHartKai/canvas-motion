@@ -199,6 +199,7 @@ class BackgroundMotion {
     const candidatePositions = [];
 
     for (let across = candidateStep; across <= dimension - patchWidth - candidateStep; across += candidateStep) {
+      if (across < center + patchHalf && across + patchWidth > center - patchHalf) continue;
       for (let along = candidateStep; along <= seamLength - segmentLength - candidateStep; along += candidateStep) {
         candidatePositions.push({ across, along });
       }
@@ -209,7 +210,8 @@ class BackgroundMotion {
     const candidates = candidatePositions.filter((_, index) => index % stride === 0).slice(0, maxCandidates);
     const getPixel = (along, across, channel) => original[getOffset(along, across) + channel];
 
-    for (let segmentStart = 0; segmentStart < seamLength; segmentStart += segmentLength) {
+    const segmentAdvance = Math.max(24, segmentLength - 16);
+    for (let segmentStart = 0; segmentStart < seamLength; segmentStart += segmentAdvance) {
       const actualLength = Math.min(segmentLength, seamLength - segmentStart);
       if (actualLength < 16 || !candidates.length) continue;
 
@@ -255,6 +257,8 @@ class BackgroundMotion {
           let blend = 1;
           if (acrossOffset < feather) blend = (acrossOffset + 1) / (feather + 1);
           else if (acrossOffset >= patchWidth - feather) blend = (patchWidth - acrossOffset) / (feather + 1);
+          const alongFeather = Math.min(12, Math.floor(actualLength / 4));
+          if (alongFeather > 0) blend *= Math.min(1, (alongOffset + 1) / alongFeather, (actualLength - alongOffset) / alongFeather);
 
           const target = getOffset(targetAlong, targetAcross);
           const sourceOffset = getOffset(sourceAlong, sourceAcross);
