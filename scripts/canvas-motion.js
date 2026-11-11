@@ -131,9 +131,28 @@ class BackgroundMotion {
     }
 
     shiftedContext.putImageData(image, 0, 0);
+
+    // Undo the offset after repairing the center seam. This moves the
+    // repaired seam back to the outer image edges, where the loop wraps.
+    // Leaving the offset in place would make the seam travel through the
+    // middle of the visible map during scrolling.
+    const outputCanvas = document.createElement("canvas");
+    outputCanvas.width = width;
+    outputCanvas.height = height;
+    const outputContext = outputCanvas.getContext("2d");
+    if (!outputContext) throw new Error("Não foi possível restaurar a posição original da imagem.");
+
+    if (horizontal) {
+      outputContext.drawImage(shifted, half, 0, width - half, height, 0, 0, width - half, height);
+      outputContext.drawImage(shifted, 0, 0, half, height, width - half, 0, half, height);
+    } else {
+      outputContext.drawImage(shifted, 0, half, width, height - half, 0, 0, width, height - half);
+      outputContext.drawImage(shifted, 0, 0, width, half, 0, height - half, width, half);
+    }
+
     const TextureClass = globalThis.PIXI?.Texture;
     if (!TextureClass?.from) throw new Error("PIXI.Texture.from não está disponível.");
-    return TextureClass.from(shifted);
+    return TextureClass.from(outputCanvas);
   }
 
   createDuplicate(mesh) {
