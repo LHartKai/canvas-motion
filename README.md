@@ -117,3 +117,8 @@ Both horizontal and vertical movement now use the same one-shot offset-and-feath
 
 
 **Offset restoration fix:** after the center seam is blended, the image is shifted back to its original orientation. This returns the repaired seam to the outer edges of the texture, where the scrolling loop joins. The previous experimental version omitted this inverse offset and left a visible band inside the map.
+
+
+### Adaptive localized seam feathering
+
+The experimental seam preparation now uses the same adaptive method for horizontal and vertical scrolling. It measures RGB mismatch along the relocated seam, smooths those measurements over a five-sample neighborhood, and selects a local feather width: already-compatible areas receive a narrow correction, while larger mismatches receive a wider transition. The image is offset for processing and then restored to its original orientation. Processing is performed once at movement start, with no per-frame image analysis or external libraries. This is a lightweight heuristic, not content-aware reconstruction; maps with distinctive objects crossing an edge may still show artifacts and require visual testing.
