@@ -1,0 +1,63 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to package (for example v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Read and validate module version
+        id: version
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./module.json').version")"
+          TAG="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          if [ "v${VERSION}" != "${TAG}" ]; then
+            echo "::error::Tag ${TAG} does not match module.json version ${VERSION}"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Foundry package
+        shell: bash
+        run: |
+          mkdir -p dist/package/canvas-motion
+          cp module.json dist/package/canvas-motion/
+          cp README.md dist/package/canvas-motion/
+          cp -R scripts dist/package/canvas-motion/
+          cp -R styles dist/package/canvas-motion/
+          cd dist/package
+          zip -r ../canvas-motion.zip canvas-motion
+          cd ../..
+          cp module.json dist/module.json
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Canvas Motion v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/canvas-motion.zip
+            dist/module.json
