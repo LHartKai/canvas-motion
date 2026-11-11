@@ -59,7 +59,7 @@ The macros call the public `game.canvasMotion` API. They require the module to b
 
 The prototype now creates a row or column of visual copies around the original Background. Copies are created once when movement starts and reused on each ticker update; movement uses the Foundry ticker delta time and is measured in canvas pixels per second. The original Background position is restored when movement stops.
 
-The module now prepares a temporary seamless version of the Background locally when movement starts. It blends matching samples from opposite edges on the movement axis (horizontal for left/right, vertical for up/down), then uses that processed texture for the continuous loop. The original Scene Background texture is restored when movement stops; the source image file is never modified. Processing is limited to images up to 8192 px per side and 40 megapixels. This first-pass edge blend is intended for organic scenery and may create ghosting on maps with buildings, roads, text, or other distinct features. The implementation still needs validation in Foundry V14 at different zoom levels and with both movement axes.
+The module now prepares a temporary seamless version of the Background locally when movement starts. It feathers samples from opposite edges on the movement axis (horizontal for left/right, vertical for up/down), with the blend strongest at the boundary and smoothly fading into the image, then uses that processed texture for the continuous loop. The original Scene Background texture is restored when movement stops; the source image file is never modified. Processing is limited to images up to 8192 px per side and 40 megapixels. This first-pass edge blend is intended for organic scenery and may create ghosting on maps with buildings, roads, text, or other distinct features. The implementation still needs validation in Foundry V14 at different zoom levels and with both movement axes.
 
 ## 0.2 — Canvas Motion
 
@@ -96,6 +96,6 @@ MIT
 
 ## Automatic seamless preparation
 
-When `game.canvasMotion.start()` runs, Canvas Motion creates a temporary in-memory copy of the Scene Background and blends opposite edge samples along the selected movement axis. No external editor, upload, or manual image preparation is required. The original image file and Scene data are not modified. The temporary texture is discarded and the original texture restored when movement stops.
+When `game.canvasMotion.start()` runs, Canvas Motion creates a temporary in-memory copy of the Scene Background and feathers opposite edge samples along the selected movement axis, with a smooth falloff to reduce mirrored artifacts. No external editor, upload, or manual image preparation is required. The original image file and Scene data are not modified. The temporary texture is discarded and the original texture restored when movement stops.
 
 This initial algorithm is intentionally lightweight and runs locally in the browser. It is best suited to organic scenery such as water, clouds, grass, terrain, and foliage. It cannot reliably reconstruct unique structures, roads, text, or other distinctive objects; inspect the result in-game before using it in a session. Very large images (over 8192 px on either side or 40 megapixels total) are rejected to avoid excessive memory use.
