@@ -94,38 +94,69 @@ class BackgroundMotion {
     const image = shiftedContext.getImageData(0, 0, width, height);
     const pixels = image.data;
     const original = new Uint8ClampedArray(pixels);
-    const seamWidth = Math.max(2, Math.min(96, Math.floor(dimension * 0.025)));
     const center = half;
 
-    // Crossfade mirrored samples only inside the relocated seam band.
-    for (let distance = 0; distance < seamWidth; distance++) {
-      const t = distance / seamWidth;
-      const smooth = t * t * (3 - 2 * t);
-      const amount = 0.5 * (1 - smooth);
-      const firstCoord = Math.max(0, center - 1 - distance);
-      const secondCoord = Math.min(dimension - 1, center + distance);
+    /*
+     * Adaptive, low-cost feather:
+     * - Measure the color mismatch at the relocated seam per row/column.
+     * - Smooth that measurement along the seam so the correction does not
+     *   jump abruptly from one scanline to the next.
+     * - Use a narrow blend where edges already agree and a wider, gentler
+     *   transition only where the mismatch is larger.
+     *
+     * Work is linear in image size and happens only once when scrolling starts.
+     */
+    const seamLength = horizontal ? height : width;
+    const maxBand = Math.max(3, Math.min(64, Math.floor(dimension * 0.018)));
+    const minBand = Math.max(2, Math.min(12, Math.floor(dimension * 0.004)));
+    const mismatch = new Float32Array(seamLength);
 
-      if (horizontal) {
-        for (let y = 0; y < height; y++) {
-          const first = (y * width + firstCoord) * 4;
-          const second = (y * width + secondCoord) * 4;
-          for (let channel = 0; channel < 4; channel++) {
-            const left = original[first + channel];
-            const right = original[second + channel];
-            pixels[first + channel] = Math.round(left * (1 - amount) + right * amount);
-            pixels[second + channel] = Math.round(right * (1 - amount) + left * amount);
-          }
-        }
-      } else {
-        for (let x = 0; x < width; x++) {
-          const first = (firstCoord * width + x) * 4;
-          const second = (secondCoord * width + x) * 4;
-          for (let channel = 0; channel < 4; channel++) {
-            const top = original[first + channel];
-            const bottom = original[second + channel];
-            pixels[first + channel] = Math.round(top * (1 - amount) + bottom * amount);
-            pixels[second + channel] = Math.round(bottom * (1 - amount) + top * amount);
-          }
+    for (let i = 0; i < seamLength; i++) {
+      const first = horizontal ? (i * width + Math.max(0, center - 1)) * 4 : (Math.max(0, center - 1) * width + i) * 4;
+      const second = horizontal ? (i * width + Math.min(width - 1, center)) * 4 : (Math.min(height - 1, center) * width + i) * 4;
+      mismatch[i] = (
+        Math.abs(original[first] - original[second]) +
+        Math.abs(original[first + 1] - original[second + 1]) +
+        Math.abs(original[first + 2] - original[second + 2])
+      ) / 3;
+    }
+
+    // Tiny five-sample smoothing pass along the seam; no image-wide blur.
+    const smoothMismatch = new Float32Array(seamLength);
+    for (let i = 0; i < seamLength; i++) {
+      let sum = 0;
+      let count = 0;
+      for (let k = -2; k <= 2; k++) {
+        const j = i + k;
+        if (j >= 0 && j < seamLength) { sum += mismatch[j]; count++; }
+      }
+      smoothMismatch[i] = count ? sum / count : mismatch[i];
+    }
+
+    for (let i = 0; i < seamLength; i++) {
+      // Map RGB difference (0..255) to a local feather width.
+      const severity = Math.max(0, Math.min(1, smoothMismatch[i] / 96));
+      const localBand = Math.round(minBand + (maxBand - minBand) * severity);
+
+      for (let distance = 0; distance < localBand; distance++) {
+        const t = distance / localBand;
+        const smooth = t * t * (3 - 2 * t);
+        const amount = 0.5 * (1 - smooth);
+        const firstCoord = Math.max(0, center - 1 - distance);
+        const secondCoord = Math.min(dimension - 1, center + distance);
+
+        const first = horizontal
+          ? (i * width + firstCoord) * 4
+          : (firstCoord * width + i) * 4;
+        const second = horizontal
+          ? (i * width + secondCoord) * 4
+          : (secondCoord * width + i) * 4;
+
+        for (let channel = 0; channel < 4; channel++) {
+          const firstValue = original[first + channel];
+          const secondValue = original[second + channel];
+          pixels[first + channel] = Math.round(firstValue * (1 - amount) + secondValue * amount);
+          pixels[second + channel] = Math.round(secondValue * (1 - amount) + firstValue * amount);
         }
       }
     }
