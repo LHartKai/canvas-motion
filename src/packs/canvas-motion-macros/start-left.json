@@ -1,0 +1,15 @@
+{
+  "_id": "start-left",
+  "name": "Canvas Motion — Iniciar à esquerda",
+  "type": "script",
+  "author": "LHartKai",
+  "img": "icons/svg/clockwork.svg",
+  "scope": "global",
+  "command": "if (!game.canvasMotion) return ui.notifications.error(\"Canvas Motion não está ativo.\");\ngame.canvasMotion.start({ direction: \"left\", speed: 80 });",
+  "folder": null,
+  "sort": 100,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {}
+}
