@@ -45,7 +45,7 @@ The GM controls movement and the module broadcasts the commands to connected cli
 
 ## Compendium — Macros
 
-The module includes the **Canvas Motion — Macros** compendium with ready-to-use Script macros:
+On the first load of each World by a GM, the module automatically creates or completes a **world compendium** named **Canvas Motion — Macros**. The nine Script macro source files are shipped with the module and imported into that world compendium:
 
 - Start movement left, right, up, or down (default speed: 80 canvas pixels/second).
 - Pause and resume movement.
@@ -53,7 +53,7 @@ The module includes the **Canvas Motion — Macros** compendium with ready-to-us
 - Stop movement and restore the original Background position.
 - Check the current movement status.
 
-The macros call the public `game.canvasMotion` API. They require the module to be enabled and are intended to be run by the GM. The pack is provided as module content; changes made directly to the packaged compendium may be overwritten by module updates.
+The macros call the public `game.canvasMotion` API. They require the module to be enabled and are intended to be run by the GM. This is a World compendium (not a read-only module pack), because Foundry V11+ compendium storage uses its own database format. Existing entries are preserved; only missing macro names are added. The source JSON files are kept under `packs/canvas-motion-macros/` inside the module.
 
 ## Continuous Background Loop
 
@@ -99,3 +99,8 @@ MIT
 When `game.canvasMotion.start()` runs, Canvas Motion creates a temporary in-memory copy of the Scene Background and feathers opposite edge samples along the selected movement axis, with a smooth falloff to reduce mirrored artifacts. No external editor, upload, or manual image preparation is required. The original image file and Scene data are not modified. The temporary texture is discarded and the original texture restored when movement stops.
 
 This initial algorithm is intentionally lightweight and runs locally in the browser. It is best suited to organic scenery such as water, clouds, grass, terrain, and foliage. It cannot reliably reconstruct unique structures, roads, text, or other distinctive objects; inspect the result in-game before using it in a session. Very large images (over 8192 px on either side or 40 megapixels total) are rejected to avoid excessive memory use.
+
+
+### Automatic macro compendium setup
+
+The module's macro JSON files are source assets, not a prebuilt LevelDB pack. When a GM loads a World with Canvas Motion enabled, the module creates the World compendium `Canvas Motion — Macros` if it does not exist and imports any missing macros. Existing macros are not overwritten. This avoids distributing an empty or invalid module compendium folder and requires no manual export step.
