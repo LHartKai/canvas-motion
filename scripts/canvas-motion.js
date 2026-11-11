@@ -25,7 +25,7 @@ class BackgroundMotion {
     this.lastSceneId = null;
     this.loopSize = 0;
     this.copyOffsets = [];
-    this.distanceAtReverse = 0;
+    this.phaseOffset = 0;
   }
 
   get isGM() { return game.user?.isGM === true; }
@@ -98,7 +98,7 @@ class BackgroundMotion {
       this.active = true;
       this.paused = false;
       this.elapsedBeforePause = 0;
-      this.distanceAtReverse = 0;
+      this.phaseOffset = 0;
       this.startedAt = performance.now();
       this.ticker = canvas.app?.ticker;
       if (!this.ticker) throw new Error("Ticker do Canvas indisponível.");
@@ -124,7 +124,8 @@ class BackgroundMotion {
   updateLoopPositions(distance) {
     if (!this.mesh || !this.origin || !this.options) return;
     const horizontal = ["left", "right"].includes(this.options.direction);
-    const offset = ((this.distanceAtReverse + distance) % this.loopSize) * this.getDirectionSign();
+    const signedOffset = this.phaseOffset + this.getDirectionSign() * distance;
+    const offset = ((signedOffset % this.loopSize) + this.loopSize) % this.loopSize;
     const setPosition = (sprite, index) => {
       const shift = index * this.loopSize + offset;
       sprite.position.set(
@@ -168,9 +169,10 @@ class BackgroundMotion {
     if (!this.active || !this.options) return false;
     // Keep the current visual offset and change only the travel direction.
     const horizontal = ["left", "right"].includes(this.options.direction);
-    const currentOffset = ((this.distanceAtReverse + (this.options.speed * this.elapsedBeforePause) / 1000) % this.loopSize);
+    const currentSignedOffset = this.phaseOffset + this.getDirectionSign() * (this.options.speed * this.elapsedBeforePause) / 1000;
+    const currentOffset = ((currentSignedOffset % this.loopSize) + this.loopSize) % this.loopSize;
     this.options.direction = ({ left: "right", right: "left", up: "down", down: "up" })[this.options.direction];
-    this.distanceAtReverse = currentOffset;
+    this.phaseOffset = currentOffset;
     this.elapsedBeforePause = 0;
     this.primary.renderDirty = true;
     if (broadcast && this.isGM) game.socket.emit(SOCKET_NAME, { action: "reverse" });
@@ -203,7 +205,7 @@ class BackgroundMotion {
     this.active = false; this.paused = false; this.mesh = null; this.loopMeshes = [];
     this.primary = null; this.ticker = null; this.tickHandler = null; this.origin = null;
     this.options = null; this.elapsedBeforePause = 0; this.lastSceneId = null;
-    this.loopSize = 0; this.copyOffsets = []; this.distanceAtReverse = 0;
+    this.loopSize = 0; this.copyOffsets = []; this.phaseOffset = 0;
   }
 
   status() {
