@@ -1,0 +1,21 @@
+{
+  "id": "canvas-motion",
+  "title": "Canvas Motion",
+  "description": "Animate the scene background independently from other canvas objects.",
+  "version": "0.1.0",
+  "authors": [
+    {
+      "name": "LHartKai"
+    }
+  ],
+  "compatibility": {
+    "minimum": "14",
+    "verified": "14"
+  },
+  "esmodules": [
+    "scripts/canvas-motion.js"
+  ],
+  "styles": [
+    "styles/canvas-motion.css"
+  ]
+}
