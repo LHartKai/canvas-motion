@@ -1,20 +1,9 @@
 /**
- * Canvas Motion — seamless background loop prototype
+ * Canvas Motion — multi-sprite continuous background loop
  * Target: Foundry VTT V14
  *
- * Moves only canvas.primary.background and one visual duplicate.
- * The duplicate is placed directly after the background in the primary group.
- *
- * GM console API:
- *   game.canvasMotion.start({ direction: "left", speed: 80 })
- *   game.canvasMotion.pause()
- *   game.canvasMotion.resume()
- *   game.canvasMotion.reverse()
- *   game.canvasMotion.stop()
- *   game.canvasMotion.status()
- *
- * The source image must tile seamlessly on the selected axis.
- * Movement is visual only and is not saved to the Scene document.
+ * Moves only canvas.primary.background and visual duplicates of its texture.
+ * All duplicates are created once at start and reused for every frame.
  */
 
 const MODULE_ID = "canvas-motion";
@@ -25,7 +14,7 @@ class BackgroundMotion {
     this.active = false;
     this.paused = false;
     this.mesh = null;
-    this.loopMesh = null;
+    this.loopMeshes = [];
     this.primary = null;
     this.ticker = null;
     this.tickHandler = null;
@@ -35,173 +24,134 @@ class BackgroundMotion {
     this.elapsedBeforePause = 0;
     this.lastSceneId = null;
     this.loopSize = 0;
+    this.copyOffsets = [];
+    this.distanceAtReverse = 0;
   }
 
-  get isGM() {
-    return game.user?.isGM === true;
-  }
+  get isGM() { return game.user?.isGM === true; }
+  get currentBackground() { return canvas?.ready ? canvas.primary?.background : null; }
 
-  get currentBackground() {
-    return canvas?.ready ? canvas.primary?.background : null;
-  }
-
-  createLoopMesh(mesh) {
+  createDuplicate(mesh) {
     const SpriteClass = globalThis.PIXI?.Sprite;
-    if (!SpriteClass || !mesh.texture) {
-      throw new Error("PIXI.Sprite ou a textura do Background não está disponível.");
-    }
+    if (!SpriteClass || !mesh.texture) throw new Error("PIXI.Sprite ou a textura do Background não está disponível.");
+    const sprite = new SpriteClass(mesh.texture);
+    if (mesh.anchor && sprite.anchor) sprite.anchor.copyFrom(mesh.anchor);
+    if (mesh.scale && sprite.scale) sprite.scale.copyFrom(mesh.scale);
+    if (mesh.pivot && sprite.pivot) sprite.pivot.copyFrom(mesh.pivot);
+    if (mesh.skew && sprite.skew) sprite.skew.copyFrom(mesh.skew);
+    sprite.rotation = mesh.rotation;
+    sprite.alpha = mesh.alpha;
+    sprite.tint = mesh.tint ?? 0xFFFFFF;
+    sprite.blendMode = mesh.blendMode;
+    sprite.visible = mesh.visible;
+    sprite.renderable = mesh.renderable;
+    sprite.eventMode = "none";
+    sprite.position.set(mesh.position.x, mesh.position.y);
+    return sprite;
+  }
 
-    const duplicate = new SpriteClass(mesh.texture);
-    if (mesh.anchor && duplicate.anchor) duplicate.anchor.copyFrom(mesh.anchor);
-    if (mesh.scale && duplicate.scale) duplicate.scale.copyFrom(mesh.scale);
-    if (mesh.pivot && duplicate.pivot) duplicate.pivot.copyFrom(mesh.pivot);
-    if (mesh.skew && duplicate.skew) duplicate.skew.copyFrom(mesh.skew);
+  getVisibleExtent(horizontal) {
+    const screen = canvas.app?.renderer?.screen;
+    const scale = horizontal ? canvas.stage?.scale?.x : canvas.stage?.scale?.y;
+    const pixels = horizontal ? screen?.width : screen?.height;
+    if (Number.isFinite(pixels) && Number.isFinite(scale) && scale > 0) return pixels / scale;
+    const dimensions = canvas.dimensions;
+    return horizontal ? dimensions?.width ?? this.loopSize : dimensions?.height ?? this.loopSize;
+  }
 
-    duplicate.rotation = mesh.rotation;
-    duplicate.alpha = mesh.alpha;
-    duplicate.tint = mesh.tint ?? 0xFFFFFF;
-    duplicate.blendMode = mesh.blendMode;
-    duplicate.visible = mesh.visible;
-    duplicate.renderable = mesh.renderable;
-    duplicate.eventMode = "none";
-    duplicate.position.set(mesh.position.x, mesh.position.y);
-
+  createLoopMeshes(mesh, direction) {
     const parent = mesh.parent;
     if (!parent) throw new Error("O Background não possui um parent no Canvas.");
+    const horizontal = direction === "left" || direction === "right";
+    this.loopSize = Math.abs(horizontal ? mesh.width : mesh.height);
+    if (!Number.isFinite(this.loopSize) || this.loopSize <= 0) throw new Error("Dimensão inválida do Background para repetição.");
 
-    const backgroundIndex = parent.getChildIndex(mesh);
-    parent.addChildAt(duplicate, backgroundIndex + 1);
-    return duplicate;
+    // Cover the visible Canvas on both sides of the original Background.
+    const count = Math.max(2, Math.ceil(this.getVisibleExtent(horizontal) / this.loopSize) + 2);
+    const index = parent.getChildIndex(mesh);
+    for (let i = -count; i <= count; i++) {
+      if (i === 0) continue;
+      const duplicate = this.createDuplicate(mesh);
+      parent.addChildAt(duplicate, Math.min(parent.children.length, index + 1 + this.loopMeshes.length));
+      this.loopMeshes.push(duplicate);
+      this.copyOffsets.push(i);
+    }
   }
 
   start(options = {}, { broadcast = true } = {}) {
-    if (!this.isGM && broadcast) {
-      ui.notifications.warn("Somente o Mestre pode controlar o movimento do cenário.");
-      return false;
-    }
-
+    if (!this.isGM && broadcast) { ui.notifications.warn("Somente o Mestre pode controlar o movimento do cenário."); return false; }
     const mesh = this.currentBackground;
-    if (!mesh) {
-      ui.notifications.warn("Não foi possível encontrar o Background da cena atual.");
-      return false;
-    }
-
+    if (!mesh) { ui.notifications.warn("Não foi possível encontrar o Background da cena atual."); return false; }
     const direction = String(options.direction ?? "left").toLowerCase();
-    const validDirections = ["left", "right", "up", "down"];
-    if (!validDirections.includes(direction)) {
-      ui.notifications.warn("Direção inválida. Use left, right, up ou down.");
-      return false;
-    }
-
+    if (!["left", "right", "up", "down"].includes(direction)) { ui.notifications.warn("Direção inválida. Use left, right, up ou down."); return false; }
     const speed = Number(options.speed ?? 80);
-    if (!Number.isFinite(speed) || speed <= 0 || speed > 2000) {
-      ui.notifications.warn("A velocidade deve ser um número entre 1 e 2000 pixels por segundo.");
-      return false;
-    }
+    if (!Number.isFinite(speed) || speed <= 0 || speed > 2000) { ui.notifications.warn("A velocidade deve ser entre 1 e 2000 pixels por segundo."); return false; }
 
     this.stop({ broadcast: false, restore: true });
-
     try {
       this.mesh = mesh;
       this.primary = canvas.primary;
       this.origin = { x: mesh.position.x, y: mesh.position.y };
       this.options = { direction, speed };
-      this.loopMesh = this.createLoopMesh(mesh);
-      this.loopSize = direction === "left" || direction === "right"
-        ? Math.abs(mesh.width)
-        : Math.abs(mesh.height);
-
-      if (!Number.isFinite(this.loopSize) || this.loopSize <= 0) {
-        throw new Error("Não foi possível determinar as dimensões do Background.");
-      }
-
+      this.lastSceneId = canvas.scene?.id ?? null;
+      this.createLoopMeshes(mesh, direction);
       this.active = true;
       this.paused = false;
       this.elapsedBeforePause = 0;
+      this.distanceAtReverse = 0;
       this.startedAt = performance.now();
-      this.lastSceneId = canvas.scene?.id ?? null;
-
-      this.tickHandler = () => this.tick();
       this.ticker = canvas.app?.ticker;
-
-      if (!this.ticker) throw new Error("O ticker de renderização do Canvas não está disponível.");
-
+      if (!this.ticker) throw new Error("Ticker do Canvas indisponível.");
+      this.tickHandler = () => this.tick();
       this.ticker.add(this.tickHandler);
       this.updateLoopPositions(0);
-
-      if (broadcast && this.isGM) {
-        game.socket.emit(SOCKET_NAME, {
-          action: "start",
-          options: this.options,
-          sceneId: this.lastSceneId
-        });
-      }
-
-      console.info(`[${MODULE_ID}] Seamless background loop started`, this.options);
+      if (broadcast && this.isGM) game.socket.emit(SOCKET_NAME, { action: "start", options: this.options, sceneId: this.lastSceneId });
+      console.info(`[${MODULE_ID}] Continuous background loop started`, { ...this.options, copies: this.loopMeshes.length });
       return true;
     } catch (error) {
-      console.error(`[${MODULE_ID}] Could not start background loop:`, error);
-      this.cleanupLoopMesh();
+      console.error(`[${MODULE_ID}] Could not start loop:`, error);
+      this.cleanupLoopMeshes();
       this.resetState();
-      ui.notifications.error(`Canvas Motion: não foi possível iniciar o loop. ${error.message}`);
+      ui.notifications.error(`Canvas Motion: não foi possível iniciar. ${error.message}`);
       return false;
     }
   }
 
+  getDirectionSign() {
+    return ["left", "up"].includes(this.options.direction) ? -1 : 1;
+  }
+
   updateLoopPositions(distance) {
-    if (!this.mesh || !this.loopMesh || !this.origin || !this.options) return;
-
-    const horizontal = this.options.direction === "left" || this.options.direction === "right";
-    const size = this.loopSize;
-    const offset = distance % size;
-
-    let x = this.origin.x;
-    let y = this.origin.y;
-    let loopX = this.origin.x;
-    let loopY = this.origin.y;
-
-    switch (this.options.direction) {
-      case "left":
-        x -= offset;
-        loopX = x + size;
-        break;
-      case "right":
-        x += offset;
-        loopX = x - size;
-        break;
-      case "up":
-        y -= offset;
-        loopY = y + size;
-        break;
-      case "down":
-        y += offset;
-        loopY = y - size;
-        break;
-    }
-
-    this.mesh.position.set(x, y);
-    this.loopMesh.position.set(loopX, loopY);
+    if (!this.mesh || !this.origin || !this.options) return;
+    const horizontal = ["left", "right"].includes(this.options.direction);
+    const offset = ((this.distanceAtReverse + distance) % this.loopSize) * this.getDirectionSign();
+    const setPosition = (sprite, index) => {
+      const shift = index * this.loopSize + offset;
+      sprite.position.set(
+        this.origin.x + (horizontal ? shift : 0),
+        this.origin.y + (horizontal ? 0 : shift)
+      );
+    };
+    setPosition(this.mesh, 0);
+    this.loopMeshes.forEach((sprite, i) => setPosition(sprite, this.copyOffsets[i]));
     this.primary.renderDirty = true;
   }
 
   tick() {
     if (!this.active || this.paused || !this.mesh || !this.primary) return;
-
-    if (!canvas?.ready || canvas.primary !== this.primary ||
-        (canvas.scene?.id ?? null) !== this.lastSceneId) {
+    if (!canvas?.ready || canvas.primary !== this.primary || (canvas.scene?.id ?? null) !== this.lastSceneId) {
       this.stop({ broadcast: false, restore: false });
       return;
     }
-
-    const elapsed = this.elapsedBeforePause + (performance.now() - this.startedAt);
-    const distance = (this.options.speed * elapsed) / 1000;
-    this.updateLoopPositions(distance);
+    // Ticker deltaMS avoids relying on frame count and keeps speed in pixels/second.
+    const deltaMS = Number(canvas.app?.ticker?.deltaMS);
+    const elapsedFrame = Number.isFinite(deltaMS) && deltaMS > 0 ? deltaMS : 0;
+    this.elapsedBeforePause += elapsedFrame;
+    this.updateLoopPositions((this.options.speed * this.elapsedBeforePause) / 1000);
   }
 
   pause({ broadcast = true } = {}) {
     if (!this.active || this.paused) return false;
-    this.tick();
-    this.elapsedBeforePause += performance.now() - this.startedAt;
     this.paused = true;
     if (broadcast && this.isGM) game.socket.emit(SOCKET_NAME, { action: "pause" });
     return true;
@@ -209,7 +159,6 @@ class BackgroundMotion {
 
   resume({ broadcast = true } = {}) {
     if (!this.active || !this.paused) return false;
-    this.startedAt = performance.now();
     this.paused = false;
     if (broadcast && this.isGM) game.socket.emit(SOCKET_NAME, { action: "resume" });
     return true;
@@ -217,83 +166,56 @@ class BackgroundMotion {
 
   reverse({ broadcast = true } = {}) {
     if (!this.active || !this.options) return false;
-
-    const opposite = { left: "right", right: "left", up: "down", down: "up" };
-    this.options.direction = opposite[this.options.direction];
-
-    // Rebase at the currently visible position so reversing never jumps.
-    this.origin = { x: this.mesh.position.x, y: this.mesh.position.y };
-    this.loopSize = this.options.direction === "left" || this.options.direction === "right"
-      ? Math.abs(this.mesh.width)
-      : Math.abs(this.mesh.height);
-
-    // Keep the duplicate on the correct side for the new direction.
+    // Keep the current visual offset and change only the travel direction.
+    const horizontal = ["left", "right"].includes(this.options.direction);
+    const currentOffset = ((this.distanceAtReverse + (this.options.speed * this.elapsedBeforePause) / 1000) % this.loopSize);
+    this.options.direction = ({ left: "right", right: "left", up: "down", down: "up" })[this.options.direction];
+    this.distanceAtReverse = currentOffset;
     this.elapsedBeforePause = 0;
-    this.startedAt = performance.now();
-    this.updateLoopPositions(0);
-
+    this.primary.renderDirty = true;
     if (broadcast && this.isGM) game.socket.emit(SOCKET_NAME, { action: "reverse" });
     return true;
   }
 
-  cleanupLoopMesh() {
-    if (this.loopMesh) {
-      this.loopMesh.parent?.removeChild(this.loopMesh);
-      this.loopMesh.destroy({ children: true, texture: false, baseTexture: false });
+  cleanupLoopMeshes() {
+    for (const sprite of this.loopMeshes) {
+      sprite.parent?.removeChild(sprite);
+      sprite.destroy({ children: true, texture: false, baseTexture: false });
     }
-    this.loopMesh = null;
+    this.loopMeshes = [];
+    this.copyOffsets = [];
   }
 
   stop({ broadcast = true, restore = true } = {}) {
     const wasActive = this.active;
-
     if (this.ticker && this.tickHandler) this.ticker.remove(this.tickHandler);
-
     if (restore && this.mesh && this.origin) {
       this.mesh.position.set(this.origin.x, this.origin.y);
       if (this.primary) this.primary.renderDirty = true;
     }
-
-    this.cleanupLoopMesh();
+    this.cleanupLoopMeshes();
     this.resetState();
-
     if (broadcast && wasActive && this.isGM) game.socket.emit(SOCKET_NAME, { action: "stop" });
     return wasActive;
   }
 
   resetState() {
-    this.active = false;
-    this.paused = false;
-    this.mesh = null;
-    this.loopMesh = null;
-    this.primary = null;
-    this.ticker = null;
-    this.tickHandler = null;
-    this.origin = null;
-    this.options = null;
-    this.startedAt = 0;
-    this.elapsedBeforePause = 0;
-    this.lastSceneId = null;
-    this.loopSize = 0;
+    this.active = false; this.paused = false; this.mesh = null; this.loopMeshes = [];
+    this.primary = null; this.ticker = null; this.tickHandler = null; this.origin = null;
+    this.options = null; this.elapsedBeforePause = 0; this.lastSceneId = null;
+    this.loopSize = 0; this.copyOffsets = []; this.distanceAtReverse = 0;
   }
 
   status() {
-    return {
-      active: this.active,
-      paused: this.paused,
-      direction: this.options?.direction ?? null,
-      speed: this.options?.speed ?? null,
-      sceneId: this.lastSceneId,
-      loop: this.active ? "seamless-repeat" : null
-    };
+    return { active: this.active, paused: this.paused, direction: this.options?.direction ?? null,
+      speed: this.options?.speed ?? null, sceneId: this.lastSceneId,
+      copies: this.loopMeshes.length, loop: this.active ? "multi-sprite" : null };
   }
 
   handleSocket(message) {
     if (!message || this.isGM) return;
     switch (message.action) {
-      case "start":
-        if (message.sceneId === (canvas.scene?.id ?? null)) this.start(message.options, { broadcast: false });
-        break;
+      case "start": if (message.sceneId === (canvas.scene?.id ?? null)) this.start(message.options, { broadcast: false }); break;
       case "pause": this.pause({ broadcast: false }); break;
       case "resume": this.resume({ broadcast: false }); break;
       case "reverse": this.reverse({ broadcast: false }); break;
@@ -303,21 +225,14 @@ class BackgroundMotion {
 }
 
 const canvasMotion = new BackgroundMotion();
-
 Hooks.once("init", () => console.info(`[${MODULE_ID}] Initializing`));
-
 Hooks.once("ready", () => {
   game.canvasMotion = {
-    start: (options) => canvasMotion.start(options),
-    pause: () => canvasMotion.pause(),
-    resume: () => canvasMotion.resume(),
-    reverse: () => canvasMotion.reverse(),
-    stop: () => canvasMotion.stop(),
-    status: () => canvasMotion.status()
+    start: (options) => canvasMotion.start(options), pause: () => canvasMotion.pause(),
+    resume: () => canvasMotion.resume(), reverse: () => canvasMotion.reverse(),
+    stop: () => canvasMotion.stop(), status: () => canvasMotion.status()
   };
-
   game.socket.on(SOCKET_NAME, (message) => canvasMotion.handleSocket(message));
   Hooks.on("canvasTearDown", () => canvasMotion.stop({ broadcast: false, restore: false }));
-
   console.info(`[${MODULE_ID}] Ready — use game.canvasMotion.start({ direction: "left", speed: 80 }) in the console as GM.`);
 });
