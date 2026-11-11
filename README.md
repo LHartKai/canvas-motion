@@ -127,3 +127,8 @@ The experimental seam preparation now uses the same adaptive method for horizont
 ### Minimum-error seam path (experimental)
 
 The previous broad adaptive blend has been replaced with a lightweight dynamic-programming seam search. After offsetting the image, the algorithm searches a narrow band around the relocated join and chooses a continuous path with low adjacent-pixel color/gradient difference. It then applies only a one-pixel feather along that path. The same method is used for horizontal and vertical movement. Search is bounded to at most 257 candidate positions per scanline and runs once at movement start. This reduces broad blur and mirrored artifacts, but does not synthesize replacement scenery; if a map has no naturally compatible path through the overlap, a future localized patch-synthesis stage may be needed.
+
+
+### Local patch synthesis (experimental)
+
+The seam preparation now supplements the minimum-error path with bounded patch synthesis. For short segments along the seam, it searches a deterministic, capped set of candidate patches elsewhere in the same image. Candidates are scored against the target context on both sides of the seam; the best-matching patch supplies new pixels for a narrow central band. Patch edges and segment joins are feathered to reduce visible transitions. Candidate count is capped at 180, sampling is sparse, and all work happens once at movement start. The same routine is used for both axes. This can introduce plausible new texture, but it may repeat recognizable details or choose imperfect patches; validate on varied maps before treating it as production-ready.
