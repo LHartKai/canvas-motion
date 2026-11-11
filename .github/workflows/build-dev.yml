@@ -1,0 +1,42 @@
+name: Build development package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "module.json"
+      - "README.md"
+      - "scripts/**"
+      - "styles/**"
+      - ".github/workflows/build-dev.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build development ZIP
+        shell: bash
+        run: |
+          mkdir -p dist/canvas-motion
+          cp module.json dist/canvas-motion/
+          cp README.md dist/canvas-motion/
+          cp -R scripts dist/canvas-motion/
+          cp -R styles dist/canvas-motion/
+          cd dist
+          zip -r canvas-motion-dev.zip canvas-motion
+
+      - name: Upload development package
+        uses: actions/upload-artifact@v4
+        with:
+          name: canvas-motion-dev
+          path: dist/canvas-motion-dev.zip
+          if-no-files-found: error
+          retention-days: 14
