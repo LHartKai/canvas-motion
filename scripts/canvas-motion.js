@@ -54,6 +54,7 @@ class BackgroundMotion {
       throw new Error("A imagem excede o limite de processamento automático (8192 px por lado / 40 MP).");
     }
 
+    // Work at the source resolution, but keep all processing one-shot.
     const workCanvas = document.createElement("canvas");
     workCanvas.width = width;
     workCanvas.height = height;
@@ -64,71 +65,75 @@ class BackgroundMotion {
     const frameY = Math.round(frame.y * resolution);
     context.drawImage(source, frameX, frameY, width, height, 0, 0, width, height);
 
-    // Feather opposite edge samples. The blend is strongest at the wrap
-    // boundary and fades smoothly to zero inside the image, avoiding the
-    // broad mirrored look of a constant 50/50 blend.
-    const image = context.getImageData(0, 0, width, height);
-    const pixels = image.data;
-    const sourcePixels = new Uint8ClampedArray(pixels);
-    const edgeSize = Math.max(2, Math.min(192, Math.floor((horizontal ? width : height) * 0.06)));
-    const blendPair = (a, b, distance) => {
-      const t = Math.min(1, distance / edgeSize);
-      const smooth = t * t * (3 - 2 * t);
-      const amount = 0.5 * (1 - smooth);
-      for (let channel = 0; channel < 4; channel++) {
-        const first = sourcePixels[a + channel];
-        const second = sourcePixels[b + channel];
-        pixels[a + channel] = Math.round(first * (1 - amount) + second * amount);
-        pixels[b + channel] = Math.round(second * (1 - amount) + first * amount);
-      }
-    };
+    /*
+     * Axis-independent offset-and-feather:
+     * 1) Move the original wrap boundary to the center of the image.
+     * 2) The new outer edges now come from neighboring pixels in the source.
+     * 3) Feather only the center seam with a symmetric, smooth crossfade.
+     *
+     * This avoids modifying every row/column based on unrelated opposite-edge
+     * pixels and uses the same inexpensive operation for both scroll axes.
+     */
+    const dimension = horizontal ? width : height;
+    const half = Math.floor(dimension / 2);
+    const remainder = dimension - half;
+    const shifted = document.createElement("canvas");
+    shifted.width = width;
+    shifted.height = height;
+    const shiftedContext = shifted.getContext("2d", { willReadFrequently: true });
+    if (!shiftedContext) throw new Error("Não foi possível preparar a imagem deslocada.");
 
     if (horizontal) {
-      // Horizontal maps often contain distinctive trees, paths, and other
-      // recognizable details at the side edges. Pixel-to-pixel blending can
-      // mirror those details, so balance only the average edge color per row.
-      // This reduces a hard vertical color seam without copying structures.
-      const correctionWidth = Math.max(2, Math.min(128, Math.floor(width * 0.04)));
-      for (let y = 0; y < height; y++) {
-        const difference = [0, 0, 0, 0];
-        for (let x = 0; x < correctionWidth; x++) {
-          const left = (y * width + x) * 4;
-          const right = (y * width + (width - 1 - x)) * 4;
-          for (let channel = 0; channel < 4; channel++) {
-            difference[channel] += sourcePixels[right + channel] - sourcePixels[left + channel];
-          }
-        }
-        for (let channel = 0; channel < 4; channel++) difference[channel] /= correctionWidth;
-
-        for (let x = 0; x < edgeSize; x++) {
-          const t = x / edgeSize;
-          const smooth = t * t * (3 - 2 * t);
-          const amount = 0.5 * (1 - smooth);
-          const left = (y * width + x) * 4;
-          const right = (y * width + (width - 1 - x)) * 4;
-          for (let channel = 0; channel < 4; channel++) {
-            const adjustment = difference[channel] * amount;
-            pixels[left + channel] = Math.max(0, Math.min(255, Math.round(sourcePixels[left + channel] + adjustment)));
-            pixels[right + channel] = Math.max(0, Math.min(255, Math.round(sourcePixels[right + channel] - adjustment)));
-          }
-        }
-      }
+      shiftedContext.drawImage(workCanvas, half, 0, remainder, height, 0, 0, remainder, height);
+      shiftedContext.drawImage(workCanvas, 0, 0, half, height, remainder, 0, half, height);
     } else {
-      // Keep the current vertical pixel blend: it has produced better results
-      // on the maps tested so far.
-      for (let y = 0; y < edgeSize; y++) {
+      shiftedContext.drawImage(workCanvas, 0, half, width, remainder, 0, 0, width, remainder);
+      shiftedContext.drawImage(workCanvas, 0, 0, width, half, 0, remainder, width, half);
+    }
+
+    const image = shiftedContext.getImageData(0, 0, width, height);
+    const pixels = image.data;
+    const original = new Uint8ClampedArray(pixels);
+    const seamWidth = Math.max(2, Math.min(96, Math.floor(dimension * 0.025)));
+    const center = half;
+
+    // Crossfade mirrored samples only inside the relocated seam band.
+    for (let distance = 0; distance < seamWidth; distance++) {
+      const t = distance / seamWidth;
+      const smooth = t * t * (3 - 2 * t);
+      const amount = 0.5 * (1 - smooth);
+      const firstCoord = Math.max(0, center - 1 - distance);
+      const secondCoord = Math.min(dimension - 1, center + distance);
+
+      if (horizontal) {
+        for (let y = 0; y < height; y++) {
+          const first = (y * width + firstCoord) * 4;
+          const second = (y * width + secondCoord) * 4;
+          for (let channel = 0; channel < 4; channel++) {
+            const left = original[first + channel];
+            const right = original[second + channel];
+            pixels[first + channel] = Math.round(left * (1 - amount) + right * amount);
+            pixels[second + channel] = Math.round(right * (1 - amount) + left * amount);
+          }
+        }
+      } else {
         for (let x = 0; x < width; x++) {
-          const top = (y * width + x) * 4;
-          const bottom = ((height - 1 - y) * width + x) * 4;
-          blendPair(top, bottom, y);
+          const first = (firstCoord * width + x) * 4;
+          const second = (secondCoord * width + x) * 4;
+          for (let channel = 0; channel < 4; channel++) {
+            const top = original[first + channel];
+            const bottom = original[second + channel];
+            pixels[first + channel] = Math.round(top * (1 - amount) + bottom * amount);
+            pixels[second + channel] = Math.round(bottom * (1 - amount) + top * amount);
+          }
         }
       }
     }
-    context.putImageData(image, 0, 0);
 
+    shiftedContext.putImageData(image, 0, 0);
     const TextureClass = globalThis.PIXI?.Texture;
     if (!TextureClass?.from) throw new Error("PIXI.Texture.from não está disponível.");
-    return TextureClass.from(workCanvas);
+    return TextureClass.from(shifted);
   }
 
   createDuplicate(mesh) {
