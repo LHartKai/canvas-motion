@@ -104,3 +104,8 @@ This initial algorithm is intentionally lightweight and runs locally in the brow
 ### Automatic macro compendium setup
 
 The module's macro JSON files are source assets, not a prebuilt LevelDB pack. When a GM loads a World with Canvas Motion enabled, the module creates the World compendium `Canvas Motion — Macros` if it does not exist and imports any missing macros. Existing macros are not overwritten. This avoids distributing an empty or invalid module compendium folder and requires no manual export step.
+
+
+### Edge correction by movement axis
+
+Horizontal scrolling uses a color-balancing pass on the left and right edge strips. It gradually corrects average color differences per row instead of mixing recognizable pixels from opposite sides, which can create mirrored trees or other duplicated details. Vertical scrolling retains the feathered pixel blend because it has looked better in the maps tested so far. Both approaches are approximate and should be visually checked with each map.
