@@ -235,29 +235,58 @@ class BackgroundMotion {
     return sprite;
   }
 
-  getVisibleExtent(horizontal) {
+  getVisibleParentBounds(parent) {
     const screen = canvas.app?.renderer?.screen;
-    const scale = horizontal ? canvas.stage?.scale?.x : canvas.stage?.scale?.y;
-    const pixels = horizontal ? screen?.width : screen?.height;
-    if (Number.isFinite(pixels) && Number.isFinite(scale) && scale > 0) return pixels / scale;
-    const dimensions = canvas.dimensions;
-    return horizontal ? dimensions?.width ?? this.loopSize : dimensions?.height ?? this.loopSize;
+    if (!screen || typeof parent.toLocal !== "function") return null;
+
+    // Convert all four viewport corners into the Background parent's space.
+    // Dividing screen dimensions by canvas.stage.scale alone is incorrect
+    // when the parent has its own transform or the viewport is offset.
+    const corners = [
+      new PIXI.Point(screen.x, screen.y),
+      new PIXI.Point(screen.x + screen.width, screen.y),
+      new PIXI.Point(screen.x + screen.width, screen.y + screen.height),
+      new PIXI.Point(screen.x, screen.y + screen.height)
+    ].map(point => parent.toLocal(point, canvas.stage));
+
+    return {
+      minX: Math.min(...corners.map(point => point.x)),
+      maxX: Math.max(...corners.map(point => point.x)),
+      minY: Math.min(...corners.map(point => point.y)),
+      maxY: Math.max(...corners.map(point => point.y))
+    };
   }
 
   createLoopMeshes(mesh, direction) {
     const parent = mesh.parent;
     if (!parent) throw new Error("O Background não possui um parent no Canvas.");
     const horizontal = direction === "left" || direction === "right";
-    this.loopSize = Math.abs(horizontal ? mesh.width : mesh.height);
-    if (!Number.isFinite(this.loopSize) || this.loopSize <= 0) throw new Error("Dimensão inválida do Background para repetição.");
 
-    // Cover the visible Canvas on both sides of the original Background.
-    const count = Math.max(2, Math.ceil(this.getVisibleExtent(horizontal) / this.loopSize) + 2);
+    // Sprite.width/height are rendered dimensions (including scale). Copies
+    // are positioned in parent coordinates, so use the matching rendered
+    // extent rather than the texture's unscaled dimensions.
+    this.loopSize = Math.abs(horizontal ? mesh.width : mesh.height);
+    if (!Number.isFinite(this.loopSize) || this.loopSize <= 0) {
+      throw new Error("Dimensão inválida do Background para repetição.");
+    }
+
+    const bounds = this.getVisibleParentBounds(parent);
+    const visibleExtent = bounds
+      ? (horizontal ? bounds.maxX - bounds.minX : bounds.maxY - bounds.minY)
+      : (horizontal ? canvas.dimensions?.width : canvas.dimensions?.height) ?? this.loopSize;
+
+    // A symmetric safety margin covers the viewport even when the original
+    // Background is not centered in it. Two extra copies absorb edge rounding.
+    const count = Math.max(3, Math.ceil(visibleExtent / this.loopSize) + 3);
     const index = parent.getChildIndex(mesh);
+
     for (let i = -count; i <= count; i++) {
       if (i === 0) continue;
       const duplicate = this.createDuplicate(mesh);
-      parent.addChildAt(duplicate, Math.min(parent.children.length, index + 1 + this.loopMeshes.length));
+      parent.addChildAt(
+        duplicate,
+        Math.min(parent.children.length, index + 1 + this.loopMeshes.length)
+      );
       this.loopMeshes.push(duplicate);
       this.copyOffsets.push(i);
     }
