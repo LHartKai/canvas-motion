@@ -1,0 +1,15 @@
+{
+  "_id": "status",
+  "name": "Canvas Motion — Consultar estado",
+  "type": "script",
+  "author": "LHartKai",
+  "img": "icons/svg/clockwork.svg",
+  "scope": "global",
+  "command": "if (!game.canvasMotion) return ui.notifications.error(\"Canvas Motion não está ativo.\");\nconst state = game.canvasMotion.status();\nconsole.info(\"[Canvas Motion] Estado atual:\", state);\nui.notifications.info(`Canvas Motion: ${state.active ? (state.paused ? \"pausado\" : \"em movimento\") : \"parado\"}${state.direction ? ` — ${state.direction}, ${state.speed} px/s` : \"\"}`);",
+  "folder": null,
+  "sort": 900,
+  "ownership": {
+    "default": 0
+  },
+  "flags": {}
+}
